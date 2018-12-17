@@ -112,8 +112,18 @@ def create_temp(node, namer):
     name = node.id
   elif isinstance(node, (gast.Attribute, gast.Subscript)):
     name = node.value.id
+  elif isinstance(node, gast.Tuple):
+    names = []
+    for n in node.elts:
+      if isinstance(n, gast.Name):
+        names.append(n.id)
+      elif isinstance(node, (gast.Attribute, gast.Subscript)):
+        names.append(n.value.id)
+      else:
+        raise TypeError("found Tuple node with entries that are not Name, Attribute, or Subscript")
+    name = '_'.join(names)
   else:
-    raise TypeError
+    raise TypeError("found %s node but expected a Name, Attribute, Subscript, or Tuple" % type(node).__name__)
   temp_node = gast.Name(id=namer.temp(name), annotation=None, ctx=None)
   anno.setanno(temp_node, 'temp_var', node)
   return temp_node
