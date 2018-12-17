@@ -61,7 +61,8 @@ def tangent_name(func, wrt):
 class Names(gast.NodeVisitor):
 
   def __init__(self):
-    self.names = set()
+    # prevent 'slice' from being used as a new varname
+    self.names = set(['slice'])
 
   def visit_Name(self, node):
     if isinstance(node.ctx, (gast.Store, gast.Param)):

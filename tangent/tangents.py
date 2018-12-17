@@ -131,6 +131,12 @@ def tlist(z, x):
   d[z] = list(d[x])
 
 
+@tangent_(slice)
+def tslice(z, a, b, c):
+  d[z] = slice(d[a], d[b], d[c])
+
+
+
 #
 # NumPy tangents
 #
@@ -216,6 +222,16 @@ def tatleast_2d(z, x):
 @tangent_(numpy.atleast_3d)
 def tatleast_3d(z, x):
   d[z] = numpy.atleast_3d(d[x])
+
+
+@tangent_(numpy.zeros)
+def tzeros(z, x):
+  d[z] = numpy.zeros(d[x])
+
+
+@tangent_(numpy.copy)
+def tcopy(z, x):
+  d[z] = numpy.copy(d[x])
 
 
 @tangent_(numpy.transpose)

@@ -69,6 +69,7 @@ from tangent import naming
 from tangent import optimization
 from tangent import quoting
 from tangent import reverse_ad
+from tangent.utils import grad_initializers
 
 INPUT_DERIVATIVE = enum.Enum('InputDerivative',
                              ('Required', 'DefaultOne', 'DefaultOnes'))
@@ -108,8 +109,10 @@ def autodiff_ast(func, wrt, motion, mode, preserve_result, check_dims, verbose):
       print('MOTION')
       print(quoting.to_source(node))
   elif mode == 'forward':
+    globs = six.get_function_globals(func)
+    external_vars = [v for v in globs if not v.startswith('__') and type(globs[v]) in grad_initializers]
     node, required = forward_ad.forward_ad(node.body[0], wrt, preserve_result,
-                                           check_dims)
+                                           check_dims, external_vars=external_vars)
   return node, required
 
 

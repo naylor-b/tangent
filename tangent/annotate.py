@@ -62,6 +62,10 @@ class ResolveCalls(gast.NodeVisitor):
             raise AttributeError(
                 'Failed to resolve name "%s" used by "%s".'% (
                     node.id, self.func.__name__))
+      else:
+        raise RuntimeError(
+          "Can't resolve function call on node of type %s" % type(node).__name__
+        )
 
     func = resolve(node.func)
     # If the user has used the @tangent.trace decorator,

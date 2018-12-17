@@ -46,7 +46,7 @@ from tangent import utils
 
 
 class ForwardAD(transformers.TreeTransformer):
-  """Generate a primal and adjoint for a given AST tree.
+  """Generate a primal and tangent for a given AST tree.
 
   This class walks the AST recursively and for each statement (currently just
   Assign, since we assume all AugAssign nodes have been removed by ANF)
@@ -74,13 +74,14 @@ class ForwardAD(transformers.TreeTransformer):
         global namespace.
   """
 
-  def __init__(self, wrt, preserve_result, check_dims):
+  def __init__(self, wrt, preserve_result, check_dims, external_vars):
     self.wrt = wrt
     self.required = []
     self.target = None
     self.metastack = []
     self.preserve_result = preserve_result
     self.check_dims = check_dims
+    self.external_vars = external_vars
     super(ForwardAD, self).__init__()
     self._tmp_node = None
 
@@ -154,6 +155,9 @@ class ForwardAD(transformers.TreeTransformer):
         shape_check_nodes.append(shape_check)
       node.body = shape_check_nodes + node.body
 
+    grad_init_args = [arg for i, arg in enumerate(node.args.args) if i not in self.wrt]
+    grad_init_args.extend([gast.Name(id=v, ctx=None, annotation=None) for v in self.external_vars])
+
     # Add in gradient initialization statements for everything else
     grad_init_nodes = [
         template.replace(
@@ -161,8 +165,7 @@ class ForwardAD(transformers.TreeTransformer):
             replace_grad=template.Replace.TANGENT,
             namer=self.namer,
             z=arg,
-            init_grad=utils.INIT_GRAD) for i, arg in enumerate(node.args.args)
-        if i not in self.wrt
+            init_grad=utils.INIT_GRAD) for arg in grad_init_args
     ]
     node.body = grad_init_nodes + node.body
 
@@ -366,6 +369,10 @@ class ForwardAD(transformers.TreeTransformer):
     if not self.target:
       return node
 
+    # do nothing if this is old fashioned string formatting % op
+    if node.op.__class__ is gast.Mod and node.left.__class__ is gast.Str:
+      return node
+
     template_ = tangents.tangents[node.op.__class__]
     tangent_node = template.replace(
         template=template_,
@@ -434,7 +441,7 @@ class ForwardAD(transformers.TreeTransformer):
     if not self.target:
       return node
 
-    # The gast representation of 'None' is as a name in some version fo Python,
+    # The gast representation of 'None' is as a name in some version of Python,
     # not as a special NameConstant. So, we have to do a bit of
     # special-casing here. Ideally, this is fixed in gast.
     if node.id in ['None','True','False']:
@@ -553,7 +560,7 @@ class ForwardAD(transformers.TreeTransformer):
     return node
 
 
-def forward_ad(node, wrt, preserve_result=False, check_dims=True):
+def forward_ad(node, wrt, preserve_result=False, check_dims=True, external_vars=()):
   """Perform forward-mode AD on an AST.
 
   This function analyses the AST to determine which variables are active and
@@ -568,6 +575,8 @@ def forward_ad(node, wrt, preserve_result=False, check_dims=True):
         non-differentiated function value should be returned
     check_dims: A boolean indicating whether the provided derivatives should
         have the same shape as their corresponding arguments.
+    external_vars: collection of variable names of variables not passed into or defined in
+        the function.
 
   Returns:
     mod: A `Module` node containing the naive primal and adjoint of the
@@ -583,7 +592,7 @@ def forward_ad(node, wrt, preserve_result=False, check_dims=True):
   cfg.Active(range(len(node.args.args))).visit(cfg_obj.entry)
 
   # Build forward mode function
-  fad = ForwardAD(wrt, preserve_result, check_dims)
+  fad = ForwardAD(wrt, preserve_result, check_dims, external_vars=external_vars)
   node = fad.visit(node)
 
   # Annotate stacks

@@ -123,10 +123,14 @@ class ANF(transformers.TreeTransformer):
       target = gast.Name(id=name, ctx=gast.Store(), annotation=None)
       stmt = gast.Assign(targets=[target], value=None)
       self.prepend(stmt)
-      dim_names = [self.trivialize_slice(s).id for s in node.dims]
-      stmt.value = gast.Tuple(elts=[
-          gast.Name(id=n, ctx=gast.Load(), annotation=None)
-          for n in dim_names], ctx=gast.Load())
+      dims = [self.trivialize_slice(s) for s in node.dims]
+      elts = []
+      for d in dims:
+        if isinstance(d, gast.Name):
+          elts.append(gast.Name(id=d.id, ctx=gast.Load(), annotation=None))
+        else:
+          elts.append(d)
+      stmt.value = gast.Tuple(elts=elts, ctx=gast.Load())
       return gast.Name(id=name, ctx=gast.Load(), annotation=None)
     elif isinstance(node, gast.Index):
       return self.trivialize(node.value)

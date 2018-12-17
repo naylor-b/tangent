@@ -76,6 +76,8 @@ def get_module_functions(modules):
   return module_fns
 
 
+# This just creates a decorator that registers the decorated function in the given dict_
+# with the given key (which is another function).
 def create_register(dict_):
   def register(key):
     def _(f):
@@ -289,6 +291,11 @@ def atleast_2d(y, x):
 @adjoint(numpy.atleast_3d)
 def atleast_3d(y, x):
   d[x] = numpy.reshape(d[y], numpy.shape(x))
+
+
+@adjoint(numpy.copy)
+def npcopy(y, x):
+  d[x] = numpy.copy(d[y])
 
 
 @adjoint(numpy.reshape)
