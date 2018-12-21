@@ -19,8 +19,9 @@ from collections import deque
 from copy import copy
 
 import gast
+from gast import AST, FunctionDef, Return
 from tangent import annotations as anno
-from tangent import grammar
+from tangent.grammar import BLOCKS, STATEMENTS
 
 
 class TreeTransformer(gast.NodeTransformer):
@@ -74,7 +75,7 @@ class TreeTransformer(gast.NodeTransformer):
       ValueError: If the given node is not a statement.
 
     """
-    if not isinstance(node, grammar.STATEMENTS):
+    if not isinstance(node, STATEMENTS):
       raise ValueError
     self.to_prepend[-1].appendleft(node)
 
@@ -91,7 +92,7 @@ class TreeTransformer(gast.NodeTransformer):
       ValueError: If the given node is not a statement.
 
     """
-    if not isinstance(node, grammar.STATEMENTS):
+    if not isinstance(node, STATEMENTS):
       raise ValueError
     self.to_append[-1].append(node)
 
@@ -112,7 +113,7 @@ class TreeTransformer(gast.NodeTransformer):
       ValueError: If the given node is not a statement.
 
     """
-    if not isinstance(node, grammar.STATEMENTS):
+    if not isinstance(node, STATEMENTS):
       raise ValueError
     self.to_insert_top.append(node)
 
@@ -129,7 +130,7 @@ class TreeTransformer(gast.NodeTransformer):
       ValueError: If the given node is not a statement.
 
     """
-    if not isinstance(node, grammar.STATEMENTS):
+    if not isinstance(node, STATEMENTS):
       raise ValueError
     if reverse:
       self.to_prepend_block[-1].appendleft(node)
@@ -149,7 +150,7 @@ class TreeTransformer(gast.NodeTransformer):
       ValueError: If the given node is not a statement.
 
     """
-    if not isinstance(node, grammar.STATEMENTS):
+    if not isinstance(node, STATEMENTS):
       raise ValueError
     if reverse:
       self.to_append_block[-1].appendleft(node)
@@ -171,12 +172,12 @@ class TreeTransformer(gast.NodeTransformer):
       A list of transformed statements.
     """
     for node in nodes:
-      if isinstance(node, gast.AST):
+      if isinstance(node, AST):
         self.to_prepend.append(deque())
         self.to_append.append(deque())
         node = self.visit(node)
         self.visit_statements(self.to_prepend.pop())
-        if isinstance(node, gast.AST):
+        if isinstance(node, AST):
           self.to_insert[-1].append(node)
         elif node:
           self.to_insert[-1].extend(node)
@@ -190,38 +191,39 @@ class TreeTransformer(gast.NodeTransformer):
     if self._top:
       is_top = True
       self._top = False
+    node_type = type(node)
     for field, old_value in gast.iter_fields(node):
       if isinstance(old_value, list):
-        if (type(node), field) in grammar.BLOCKS:
+        if (node_type, field) in BLOCKS:
           self.to_prepend_block.append(deque())
           self.to_append_block.append(deque())
           self.to_insert.append(deque())
           new_values = copy(self.visit_statements(old_value))
           self.to_insert.pop()
+          if isinstance(node, FunctionDef):
+            new_values.extendleft(self.to_insert_top)
+            self.to_insert_top = deque([])
         else:
           new_values = []
           for value in old_value:
-            if isinstance(value, gast.AST):
+            if isinstance(value, AST):
               value = self.visit(value)
               if value is None:
                 continue
-              elif not isinstance(value, gast.AST):
+              elif not isinstance(value, AST):
                 new_values.extend(value)
                 continue
             new_values.append(value)
-        if isinstance(node, gast.FunctionDef) and field == 'body':
-          new_values.extendleft(self.to_insert_top)
-          self.to_insert_top = deque([])
-        if (type(node), field) in grammar.BLOCKS:
+        if (node_type, field) in BLOCKS:
           new_values.extendleft(self.to_prepend_block.pop())
           return_ = None
-          if new_values and isinstance(new_values[-1], gast.Return):
+          if new_values and isinstance(new_values[-1], Return):
             return_ = new_values.pop()
           new_values.extend(self.to_append_block.pop())
           if return_:
             new_values.append(return_)
         old_value[:] = new_values
-      elif isinstance(old_value, gast.AST):
+      elif isinstance(old_value, AST):
         new_node = self.visit(old_value)
         if new_node is None:
           delattr(node, field)
@@ -263,7 +265,7 @@ class Remove(gast.NodeTransformer):
       # corresponding pop statements
       self.is_call = True
     new_node = super(Remove, self).visit(node)
-    if isinstance(node, grammar.STATEMENTS):
+    if isinstance(node, STATEMENTS):
       if self.remove and not self.is_call:
         new_node = None
       self.remove = self.is_call = False

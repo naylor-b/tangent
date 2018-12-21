@@ -46,6 +46,9 @@ from tangent import quoting
 from tangent import transformers
 
 
+DONT_TRIVIALIZE = (gast.Name, type(None)) + grammar.LITERALS
+
+
 class ANF(transformers.TreeTransformer):
   """Transform a tree to an ANF-like form."""
 
@@ -61,7 +64,7 @@ class ANF(transformers.TreeTransformer):
       anno.setanno(node, 'pre_anf', self.src)
 
   def trivialize(self, node):
-    if isinstance(node, (gast.Name, type(None)) + grammar.LITERALS):
+    if isinstance(node, DONT_TRIVIALIZE):
       return node
     name = self.namer.name(node)
     stmt = gast.Assign(
@@ -117,6 +120,7 @@ class ANF(transformers.TreeTransformer):
               for arg in [node.lower, node.upper,
                           node.step]],
           keywords=[])
+      anno.setanno(stmt.value, 'func', slice)
       return gast.Name(id=name, ctx=gast.Load(), annotation=None)
     elif isinstance(node, gast.ExtSlice):
       name = self.namer.name(node)

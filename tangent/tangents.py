@@ -133,7 +133,7 @@ def tlist(z, x):
 
 @tangent_(slice)
 def tslice(z, a, b, c):
-  d[z] = slice(d[a], d[b], d[c])
+  d[z] = slice(a, b, c)
 
 
 

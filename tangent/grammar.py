@@ -52,7 +52,7 @@ SIMPLE_STATEMENTS = (
 
 STATEMENTS = COMPOUND_STATEMENTS + SIMPLE_STATEMENTS
 
-BLOCKS = (
+BLOCKS = frozenset((
     (gast.Module, 'body'),
     (gast.FunctionDef, 'body'),
     (gast.AsyncFunctionDef, 'body'),
@@ -64,4 +64,4 @@ BLOCKS = (
     (gast.While, 'orelse'),
     (gast.If, 'body'),
     (gast.If, 'orelse'),
-)
+))

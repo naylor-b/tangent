@@ -110,7 +110,9 @@ def autodiff_ast(func, wrt, motion, mode, preserve_result, check_dims, verbose):
       print(quoting.to_source(node))
   elif mode == 'forward':
     globs = six.get_function_globals(func)
-    external_vars = [v for v in globs if not v.startswith('__') and type(globs[v]) in grad_initializers]
+    # assume all vars coming into the function from globals have zero derivs
+    external_vars = [v for v in globs if not v.startswith('__')
+                     and not inspect.isclass(globs[v]) and type(globs[v]) in grad_initializers]
     node, required = forward_ad.forward_ad(node.body[0], wrt, preserve_result,
                                            check_dims, external_vars=external_vars)
   return node, required

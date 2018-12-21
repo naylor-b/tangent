@@ -80,8 +80,7 @@ class CFG(gast.NodeVisitor):
     """Link this node to the current leaves."""
     for head in self.head:
       head.next.add(node)
-    self.head[:] = []
-    self.head.append(node)
+    self.head[:] = [node]
 
   @classmethod
   def build_cfg(cls, node):

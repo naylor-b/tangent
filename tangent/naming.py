@@ -264,7 +264,7 @@ class Namer(object):
     return self._name(node.value)
 
   def name_Slice(self, node):
-    return ''.join(self._name(i) if i else ''
+    return ''.join(self._name(i) if i else 'none_'
                    for i in (node.lower, node.upper, node.step))
 
   def name_ExtSlice(self, node):
