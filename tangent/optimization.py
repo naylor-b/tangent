@@ -22,14 +22,22 @@ from tangent import cfg
 from tangent import quoting
 from tangent import transformers
 
+import astunparse
 
 def fixed_point(f):
 
   def _fp(node):
+    count = 1
     while True:
       before = quoting.to_source(node)
+      if count == 1:
+        print("BEFORE pass 1")
+        print(before)
       node = f(node)
       after = quoting.to_source(node)
+      print("AFTER pass %d" % count)
+      print(after)
+      count += 1
       if before == after:
         break
     return node
@@ -52,8 +60,11 @@ def optimize(node):
   Returns:
     The optimized AST.
   """
+  print("DEAD CODE ELIMINATION")
   node = dead_code_elimination(node)
+  print("CONSTANT FOLDING")
   node = constant_folding(node)
+  print("ASSIGNMENT PROPAGATION")
   node = assignment_propagation(node)
   return node
 
@@ -79,6 +90,10 @@ def dead_code_elimination(node):
   """
   to_remove = set(def_[1] for def_ in annotate.unused(node)
                   if not isinstance(def_[1], (gast.arguments, gast.For)))
+  #print("dead code removing:")
+  #import astunparse
+  #for s in to_remove:
+  #  print('  ', astunparse.unparse(s).strip())
   for n in list(to_remove):
     for succ in gast.walk(n):
       if anno.getanno(succ, 'push', False):

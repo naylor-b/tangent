@@ -33,8 +33,10 @@ def get_name(node):
   """
   if isinstance(node, gast.Name):
     return node.id
-  elif isinstance(node, (gast.Subscript, gast.Attribute)):
+  elif isinstance(node, gast.Subscript):
     return get_name(node.value)
+  elif isinstance(node, gast.Attribute):
+    return '.'.join((get_name(node.value), node.attr))
   else:
     raise TypeError
 

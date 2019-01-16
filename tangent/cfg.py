@@ -238,8 +238,12 @@ def forward(node, analysis):
     raise TypeError('not a valid forward analysis object')
   for succ in gast.walk(node):
     if isinstance(succ, gast.FunctionDef):
+      #orig_args = succ.args.args[:]
+      #for attr in get_self_attrs(node):
+      #  succ.args.args.append(gast.Name(id=attr, ctx=None, annotation=None))
       cfg_obj = CFG.build_cfg(succ)
       analysis.visit(cfg_obj.entry)
+      #succ.args.args = orig_args
   return node
 
 
@@ -256,6 +260,29 @@ class ReachingDefinitions(Forward):
       gen = frozenset((id_, node.value) for id_ in definitions)
       kill = frozenset(def_ for def_ in incoming
                        if def_[0] in definitions)
+
+      # prevent optimizer from killing assigns with subscript on LHS
+      #if kill and isinstance(node.value, gast.Assign):
+      #  k = []
+      #  for def_ in kill:
+      #    for t in node.value.targets:
+      #      if isinstance(t, gast.Subscript) and def_[0] == ast_.get_name(t):
+      #        break
+      #    else:
+      #      k.append(def_)
+      #  kill = frozenset(k)
+
+
+      if kill:
+        import astunparse
+        print('statement:', astunparse.unparse(node.value), end='')
+        l = list(x[0] for x in incoming)
+        for k, n in kill:
+          print(k, ':', astunparse.unparse(n).strip())
+      #   print('deinitions:', list(definitions))
+      #   print('incoming:', l)
+      #   print('kill:', list(x[0] for x in kill))
+
       return gen, kill
     super(ReachingDefinitions, self).__init__('definitions', definition)
 
@@ -296,11 +323,73 @@ class Active(Forward):
         if anno.getanno(node.value.value, 'func', False) == utils.pop:
           gen.update(ast_.get_updated(node.value))
         else:
-          for succ in gast.walk(node.value.value):
-            if isinstance(succ, gast.Name) and succ.id in incoming:
+          names = get_variables(node.value.value)
+          #for succ in gast.walk(node.value.value):
+          #  if isinstance(succ, gast.Name) and succ.id in incoming:
+          #    gen.update(ast_.get_updated(node.value))
+          #    break
+          #  elif isinstance(succ, gast.Attribute) and ast_.get_name(succ) in incoming:
+          #    gen.update(ast_.get_updated(node.value))
+          #    break
+          #else:
+          #  kill.update(ast_.get_updated(node.value))
+          for n in names:
+            if n in incoming:
               gen.update(ast_.get_updated(node.value))
               break
           else:
             kill.update(ast_.get_updated(node.value))
       return gen, kill
     super(Active, self).__init__('active', active)
+
+
+class SelfVarVisitor(gast.NodeVisitor):
+    """
+    A visitor that collects all self.* attribute accesses.
+    """
+
+    def __init__(self):
+        super(SelfVarVisitor, self).__init__()
+        self.self_attrs = set()
+
+    def visit_Attribute(self, node):  # (value, attr)
+      try:
+        name = ast_.get_name(node)
+      except TypeError:
+        pass
+      else:
+        if name.startswith('self.'):
+            self.self_attrs.add(name)
+
+
+def get_self_attrs(node):
+    visitor = SelfVarVisitor()
+    visitor.visit(node)
+    return visitor.self_attrs
+
+
+class VarVisitor(gast.NodeVisitor):
+    """
+    A visitor that collects all variable accesses.
+    """
+
+    def __init__(self):
+        super(VarVisitor, self).__init__()
+        self.variables = set()
+
+    def visit_Name(self, node):  # (id)
+      self.variables.add(node.id)
+
+    def visit_Attribute(self, node):  # (value, attr)
+      try:
+        name = ast_.get_name(node)
+      except TypeError:
+        pass
+      else:
+        self.variables.add(name)
+
+
+def get_variables(node):
+    visitor = VarVisitor()
+    visitor.visit(node)
+    return visitor.variables

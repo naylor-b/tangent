@@ -204,8 +204,7 @@ class Namer(object):
 
   @uniqify
   def name(self, node):
-    namer = getattr(self, 'name_' + node.__class__.__name__)
-    return namer(node)
+    return getattr(self, 'name_' + node.__class__.__name__)(node)
 
   @uniqify
   def counter(self):

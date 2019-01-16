@@ -197,6 +197,11 @@ class ReverseAD(object):
       if (isinstance(succ, gast.Name) and isinstance(succ.ctx, gast.Load) and
           succ.id in self.active_variables):
         return True
+      else:
+        if (isinstance(succ, gast.Attribute) and isinstance(succ.ctx, gast.Load)):
+          n = ast_.get_name(succ)
+          if n in self.active_variables or n.startswith('self.'):
+            return True
     return False
 
   def visit_FunctionDef(self, node):
@@ -426,7 +431,11 @@ class ReverseAD(object):
     return primal, adjoint
 
   def visit_Attribute(self, node):
-    raise ValueError('attributes are not yet supported for gradients')
+    # raise ValueError('attributes are not yet supported for gradients')
+    # adjoint = template.replace('d[x] = tangent.copy(d[y])',
+    adjoint = template.replace('d[x] = tangent.init_grad(d[y])',
+                               namer=self.namer, x=node, y=self.target)
+    return node, adjoint
 
   def visit_AugAssign(self, node):
     raise ValueError('AugAssign not supported for gradients. '
@@ -548,27 +557,30 @@ class ReverseAD(object):
     adjoint = [create_tmp, restore_substack, restore
               ] + adjoint_rhs + [reset] + accumulations
 
-    # If the LHS is a subscript assignment with variable index, we need to
-    # store and restore that as well
-    if (isinstance(self.orig_target, gast.Subscript) and
-        isinstance(self.orig_target.slice.value, gast.Name)):
-      push, pop, op_id = get_push_pop()
-      i = self.orig_target.slice.value
-      push_index = template.replace(
-          'push(_stack, i, op_id)',
-          push=push,
-          i=i,
-          _stack=self.stack,
-          op_id=op_id)
-      pop_index = template.replace(
-          'i = pop(_stack, op_id)',
-          pop=pop,
-          i=i,
-          _stack_=self.stack,
-          op_id=op_id)
+    # BAN - commented out the block below because in rev mode it was creating
+    # push/pop for the index variable that cause the original setting of the index
+    # var to be removed during reaching var analysis.
+    # # If the LHS is a subscript assignment with variable index, we need to
+    # # store and restore that as well
+    # if (isinstance(self.orig_target, gast.Subscript) and
+    #     isinstance(self.orig_target.slice.value, gast.Name)):
+    #   push, pop, op_id = get_push_pop()
+    #   i = self.orig_target.slice.value
+    #   push_index = template.replace(
+    #       'push(_stack, i, op_id)',
+    #       push=push,
+    #       i=i,
+    #       _stack=self.stack,
+    #       op_id=op_id)
+    #   pop_index = template.replace(
+    #       'i = pop(_stack, op_id)',
+    #       pop=pop,
+    #       i=i,
+    #       _stack_=self.stack,
+    #       op_id=op_id)
 
-      primal.insert(len(primal), push_index)
-      adjoint.insert(0, pop_index)
+      # primal.insert(len(primal), push_index)
+      # adjoint.insert(0, pop_index)
 
     # Add a comment in the backwards pass, indicating which
     # lines in the forward pass generated the adjoint

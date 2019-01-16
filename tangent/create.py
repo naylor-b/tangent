@@ -40,31 +40,68 @@ def create_grad(node, namer, tangent=False):
         Node has an `adjoint_var` annotation referring to the node it is an
         adjoint of.
   """
-  if not isinstance(node, (gast.Subscript, gast.Name, gast.Str)):
+  if not isinstance(node, (gast.Subscript, gast.Name, gast.Attribute, gast.Str)):
     raise TypeError
 
   if anno.hasanno(node, 'temp_var'):
     return create_grad(anno.getanno(node, 'temp_var'), namer, tangent)
 
-  def _name_grad(node):
-    if not isinstance(node, gast.Name):
-      raise TypeError
+  #def _name_grad(node):
+    #if not isinstance(node, gast.Name):
+      #raise TypeError
+    #varname = node.id
+    #name = namer.grad(varname, tangent)
+    #grad_node = gast.Name(
+        #id=name, ctx=None, annotation=None)
+    #anno.setanno(grad_node, 'adjoint_var', node)
+    #return grad_node
+
+  if isinstance(node, gast.Name):
     varname = node.id
     name = namer.grad(varname, tangent)
     grad_node = gast.Name(
         id=name, ctx=None, annotation=None)
     anno.setanno(grad_node, 'adjoint_var', node)
     return grad_node
-  if isinstance(node, gast.Subscript):
+  elif isinstance(node, gast.Subscript):
     grad_node = create_grad(node.value, namer, tangent=tangent)
     grad_node.ctx = gast.Load()
     return gast.Subscript(value=grad_node, slice=node.slice, ctx=None)
+  elif isinstance(node, gast.Attribute):
+    varname = namer.name_Attribute(node)
+    name = namer.grad(varname, tangent)
+    grad_node = gast.Name(
+        id=name, ctx=None, annotation=None)
+    anno.setanno(grad_node, 'adjoint_var', node)
+    return grad_node
   elif isinstance(node, gast.Str):
     grad_node = create_grad(
         gast.Name(id=node.s, ctx=None, annotation=None), namer, tangent=tangent)
     return gast.Str(grad_node.id)
-  else:
-    return _name_grad(node)
+
+  raise TypeError("Can't name a grad of type %s" % type(node).__name__)
+
+def _get_full_name(node):
+    # If the node is an Attribute or Name node that is composed
+    # only of other Attribute or Name nodes, then return the full
+    # dotted name for this node. Otherwise, i.e., if this node
+    # contains Subscripts or Calls, return None.
+    if isinstance(node, gast.Name):
+        return node.id
+    elif not isinstance(node, gast.Attribute):
+        return None
+    val = node.value
+    parts = [node.attr]
+    while True:
+        if isinstance(val, gast.Attribute):
+            parts.append(val.attr)
+            val = val.value
+        elif isinstance(val, gast.Name):
+            parts.append(val.id)
+            break
+        else:  # it's more than just a simple dotted name
+            return None
+    return '.'.join(parts[::-1])
 
 
 def create_temp_grad(node, namer, tangent=False):
@@ -82,17 +119,34 @@ def create_temp_grad(node, namer, tangent=False):
 
         Nodes are given an annotation `temp_adjoint_var`.
   """
-  if not isinstance(node, (gast.Subscript, gast.Name)):
-    raise TypeError
-
-  def _name_temp_grad(node):
+  if isinstance(node, gast.Name):
     name = namer.temp_grad(node.id, tangent)
-    temp_node = gast.Name(id=name, annotation=None, ctx=None)
-    return temp_node
-  if isinstance(node, gast.Subscript):
-    temp_node = _name_temp_grad(node.value)
+  elif isinstance(node, gast.Subscript):
+    name = namer.temp_grad(node.value.id, tangent)
+  elif isinstance(node, gast.Str):
+    name = namer.temp_grad(node.s, tangent)
+  elif isinstance(node, gast.Attribute):
+    n = _get_full_name(node)
+    if n is not None:
+      name = namer.temp_grad(n.replace('.', '_'), tangent)
+    else:
+      raise TypeError("Can't create temp grad name from non-simple Attribute")
   else:
-    temp_node = _name_temp_grad(node)
+    raise TypeError("Can't create temp grad name from node %s" % node.s)
+
+  # if not isinstance(node, (gast.Name, gast.Subscript)):
+  #   raise TypeError
+
+  # def _name_temp_grad(node):
+  #   name = namer.temp_grad(node.id, tangent)
+  #   temp_node = gast.Name(id=name, annotation=None, ctx=None)
+  #   return temp_node
+  # if isinstance(node, gast.Subscript):
+  #   temp_node = _name_temp_grad(node.value)
+  # else:
+  #   temp_node = _name_temp_grad(node)
+
+  temp_node = gast.Name(id=name, annotation=None, ctx=None)
   anno.setanno(temp_node, 'temp_adjoint_var', node)
   return temp_node
 
