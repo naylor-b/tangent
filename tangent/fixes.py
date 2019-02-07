@@ -29,6 +29,7 @@ with assignment (`CleanGrad`) or we explicitly initialize the gradient to zeros
 
 """
 from __future__ import absolute_import
+import copy
 import gast
 
 from tangent import annotations as anno
@@ -80,9 +81,10 @@ class CleanGrad(gast.NodeTransformer):
 class FixGrad(transformers.TreeTransformer):
   """Explicitly initialize gradient to zero if needed."""
 
-  def __init__(self):
+  def __init__(self, costmap):
     super(FixGrad, self).__init__()
     self.added = set()
+    self.costmap = costmap
 
   def _init(self, node):
     gradname = ast_.get_name(node)
@@ -90,9 +92,18 @@ class FixGrad(transformers.TreeTransformer):
       var = anno.getanno(node, 'adjoint_var')
     else:
       var = anno.getanno(node, 'temp_adjoint_var')
+    print("ADDING %s = init_grad(%s)" % (gradname, var.id))
     return gast.Assign(
         targets=[gast.Name(id=gradname, ctx=gast.Store(), annotation=None)],
         value=gast.Call(func=utils.INIT_GRAD, args=[var], keywords=[]))
+
+  def _sub(self, node):
+    rhs = self.costmap[node.id]
+    assign = gast.Assign(
+        targets=[gast.Name(id=node.id, ctx=gast.Store(), annotation=None)],
+        value=copy.deepcopy(rhs))
+    print("ADDING", quoting.unquote(assign))
+    return assign
 
   def prepend_uninitialized_grads(self, node):
     if anno.hasanno(node, 'defined_in'):
@@ -104,8 +115,13 @@ class FixGrad(transformers.TreeTransformer):
              anno.hasanno(use, 'temp_adjoint_var')) and
             use.id not in anno.getanno(node, 'defined_in') and
             use.id not in self.added):
+          import astunparse
+          print("ADD INIT FOR:", astunparse.unparse(node).strip())
           self.added.add(use.id)
-          self.insert_top(self._init(use))
+          if use.id in self.costmap and anno.hasanno(use, 'adjoint_var'):
+            self.insert_top(self._sub(use))
+          else:
+            self.insert_top(self._init(use))
     return node
 
   def visit_Assign(self, node):
@@ -123,3 +139,8 @@ class FixGrad(transformers.TreeTransformer):
   def visit_Return(self, node):
     node = self.prepend_uninitialized_grads(node)
     return node
+
+  def visit_FunctionDef(self, node):
+    self.dy = node.args.args[1].id
+    super(FixGrad, self).generic_visit(node)
+

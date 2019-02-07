@@ -68,3 +68,10 @@ def getanno(node, key, default=None):
 def delanno(node, key):
   annotations = getattr(node, ANNOTATION_FIELD, {})
   del annotations[key]
+
+
+
+def dumpanno(node):
+  if hasattr(node, '_tangent'):
+    for n in node._tangent:
+      print(n, node._tangent[n])

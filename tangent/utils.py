@@ -670,9 +670,9 @@ def pop(stack, op_id):
   if __debug__:
     pushed_value, pushed_op_id = stack.pop()
     assert pushed_op_id == op_id, 'Wanted %s, got %s' % (op_id, pushed_op_id)
+    return pushed_value
   else:
-    pushed_value = stack.pop()
-  return pushed_value
+    return stack.pop()
 
 
 def pop_stack(stack, op_id):
@@ -692,9 +692,9 @@ def pop_stack(stack, op_id):
   if __debug__:
     pushed_stack, pushed_op_id = stack.pop()
     assert pushed_op_id == op_id, 'Wanted %s, got %s' % (op_id, pushed_op_id)
+    return pushed_stack
   else:
-    pushed_stack = stack.pop()
-  return pushed_stack
+    return stack.pop()
 
 
 def push_stack(stack, substack, op_id):

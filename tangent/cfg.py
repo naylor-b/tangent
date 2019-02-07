@@ -124,8 +124,7 @@ class CFG(gast.NodeVisitor):
     # Handle the body
     self.visit_statements(node.body)
     body_exit = self.head[:]
-    self.head[:] = []
-    self.head.append(test)
+    self.head[:] = [test]
     # Handle the orelse
     self.visit_statements(node.orelse)
     self.head.extend(body_exit)
@@ -247,6 +246,14 @@ def forward(node, analysis):
   return node
 
 
+def has_subscript_target(node):
+  if isinstance(node, gast.Assign):
+    for t in node.targets:
+      if isinstance(t, gast.Subscript):
+        return True
+  return False
+
+
 class ReachingDefinitions(Forward):
   """Perform reaching definition analysis.
 
@@ -254,34 +261,29 @@ class ReachingDefinitions(Forward):
 
   """
 
-  def __init__(self):
+  def __init__(self, fix=False):
+    self.fix = fix
     def definition(node, incoming):
       definitions = ast_.get_updated(node.value)
-      gen = frozenset((id_, node.value) for id_ in definitions)
-      kill = frozenset(def_ for def_ in incoming
-                       if def_[0] in definitions)
+      if not self.fix and has_subscript_target(node.value):
+        gen = frozenset()
+      else:
+        gen = frozenset((id_, node.value) for id_ in definitions)
+      if self.fix:
+        kill = frozenset(def_ for def_ in incoming if def_[0] in definitions)
+      else:
+        kill = frozenset(def_ for def_ in incoming if def_[0] in definitions and
+                         not has_subscript_target(def_[1]))
 
-      # prevent optimizer from killing assigns with subscript on LHS
-      #if kill and isinstance(node.value, gast.Assign):
-      #  k = []
-      #  for def_ in kill:
-      #    for t in node.value.targets:
-      #      if isinstance(t, gast.Subscript) and def_[0] == ast_.get_name(t):
-      #        break
-      #    else:
-      #      k.append(def_)
-      #  kill = frozenset(k)
-
-
-      if kill:
-        import astunparse
-        print('statement:', astunparse.unparse(node.value), end='')
-        l = list(x[0] for x in incoming)
-        for k, n in kill:
-          print(k, ':', astunparse.unparse(n).strip())
-      #   print('deinitions:', list(definitions))
-      #   print('incoming:', l)
-      #   print('kill:', list(x[0] for x in kill))
+      # if (kill or gen) and isinstance(node.value, gast.Assign):
+      #   import astunparse
+      #   st = astunparse.unparse(node.value).strip()
+      #   print('STATEMENT:', st, node.value)
+      #   l = list(x[0] for x in incoming)
+      #   for k, n in gen:
+      #     print('GEN', k, ':', astunparse.unparse(n).strip())
+      #   for k, n in kill:
+      #     print('KILL', k, ':', astunparse.unparse(n).strip(), n)
 
       return gen, kill
     super(ReachingDefinitions, self).__init__('definitions', definition)

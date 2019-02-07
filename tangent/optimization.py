@@ -45,7 +45,6 @@ def fixed_point(f):
   return _fp
 
 
-@fixed_point
 def optimize(node):
   """Perform a series of optimization passes.
 
@@ -60,12 +59,14 @@ def optimize(node):
   Returns:
     The optimized AST.
   """
-  print("DEAD CODE ELIMINATION")
-  node = dead_code_elimination(node)
-  print("CONSTANT FOLDING")
-  node = constant_folding(node)
-  print("ASSIGNMENT PROPAGATION")
-  node = assignment_propagation(node)
+  from openmdao.devtools.dataflow import remove_unused
+  node = remove_unused(node)
+  # print("DEAD CODE ELIMINATION")
+  # node = dead_code_elimination(node)
+  # print("CONSTANT FOLDING")
+  #node = constant_folding(node)
+  # print("ASSIGNMENT PROPAGATION")
+  #node = assignment_propagation(node)
   return node
 
 

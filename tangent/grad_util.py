@@ -92,19 +92,19 @@ def autodiff_ast(func, wrt, motion, mode, preserve_result, check_dims, verbose):
   node = desugar.explicit_loop_indexes(node)
   fence.validate(node, inspect.getsource(func))
   node = anf_.anf(node)
-  if verbose >= 2:
+  if True:  # verbose >= 2:
     print('ANF')
     print(quoting.to_source(node))
   if mode == 'reverse':
-    node, required, stack = reverse_ad.reverse_ad(node.body[0], wrt,
-                                                  preserve_result, check_dims)
+    node, required, stack, costmap = reverse_ad.reverse_ad(node.body[0], wrt,
+                                                         preserve_result, check_dims)
     if verbose >= 2:
       print('RAW')
       print(quoting.to_source(node))
     if motion == 'split':
-      node = reverse_ad.split(node, stack)
+      node = reverse_ad.split(node, stack, costmap)
     else:
-      node = reverse_ad.joint(node)
+      node = reverse_ad.joint(node, costmap)
     if verbose >= 2:
       print('MOTION')
       print(quoting.to_source(node))

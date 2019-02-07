@@ -20,7 +20,7 @@ initializiation of gradients using the `_fix` function, and finally combining
 the primal and adjoint functions in either `split` or `joint` mode.
 """
 from __future__ import absolute_import
-import collections
+from collections import deque, defaultdict
 import copy
 import inspect
 from uuid import uuid4
@@ -215,6 +215,19 @@ class ReverseAD(object):
       raise ValueError('function must have exactly one return statement')
     return_node = ast_.copy_node(return_nodes[0])
 
+    # Find the cost; the first variable of potentially multiple return values
+    # The adjoint will receive a value for the initial gradient of the cost
+    self.y = y = node.body[-1].value
+    if isinstance(y, gast.Tuple):
+      y = y.elts[0]
+    self.dy = dy = gast.Name(id=self.namer.grad(y.id), ctx=gast.Param(),
+                             annotation=None)
+
+    # used to map a grad back to the cost in order to avoid incorrectly zeroing out the cost
+    # in cases where we access cost via Subscript, i.e. we don't want to generate an init_grad call
+    # in FixGrad() if the missing grad is just some subscript of the cost (which is passed into the function).
+    self.costmap = {}
+
     # Perform AD on the function body
     body, adjoint_body = self.visit_statements(node.body[:-1])
 
@@ -241,7 +254,6 @@ class ReverseAD(object):
       body.append(assign_stored_result)
       dx.elts.append(stored_result_node)
 
-
     for _dx in dx.elts:
       _dx.ctx = gast.Load()
     return_dx = gast.Return(value=dx)
@@ -255,14 +267,6 @@ class ReverseAD(object):
 
     # The new body is the primal body plus the return statement
     node.body = body + node.body[-1:]
-
-    # Find the cost; the first variable of potentially multiple return values
-    # The adjoint will receive a value for the initial gradient of the cost
-    y = node.body[-1].value
-    if isinstance(y, gast.Tuple):
-      y = y.elts[0]
-    dy = gast.Name(id=self.namer.grad(y.id), ctx=gast.Param(),
-                   annotation=None)
 
     if self.check_dims:
 
@@ -287,7 +291,7 @@ class ReverseAD(object):
 
   def visit_statements(self, nodes):
     """Generate the adjoint of a series of statements."""
-    primals, adjoints = [], collections.deque()
+    primals, adjoints = [], deque()
     for node in nodes:
       primal, adjoint = self.visit(node)
       if not isinstance(primal, list):
@@ -466,6 +470,19 @@ class ReverseAD(object):
       push, pop, op_id = get_push_pop()
     push_stack, pop_stack, op_id_stack = get_push_pop_stack()
 
+    # import astunparse
+    # print("ASSIGN:", astunparse.unparse(node).strip())
+
+    if (isinstance(node.value, gast.Subscript) and isinstance(node.value.value, gast.Name) and
+        len(node.targets) == 1 and isinstance(node.targets[0], gast.Name)):
+      tgt = node.targets[0].id
+      src = node.value.value.id
+      if (src in self.costmap or src == self.y.id) and tgt not in self.costmap:
+        self.costmap[tgt] = node.value
+        grad = self.namer.grad(tgt, tangent=False)
+        self.costmap[grad] = tmp = copy.deepcopy(node.value)
+        tmp.value.id = self.namer.grad(src)
+
     # Every assignment statement requires us to store the pre-value, and in the
     # adjoint restore the value, and reset the gradient
     store = template.replace(
@@ -474,6 +491,7 @@ class ReverseAD(object):
         y=self.orig_target,
         _stack=self.stack,
         op_id=op_id)
+    # print("   STORE:", astunparse.unparse(store).strip())
     create_substack = template.replace(
         'substack = tangent.Stack()', substack=self.substack)
     store_substack = template.replace(
@@ -500,6 +518,8 @@ class ReverseAD(object):
         init_grad=utils.INIT_GRAD,
         namer=self.namer,
         replace_grad=template.Replace.FULL)
+
+    # print("   RESET:", astunparse.unparse(reset).strip())
 
     # If there are no active nodes, we don't need to find an adjoint
     # We simply store and restore the state, and reset the gradient
@@ -559,7 +579,7 @@ class ReverseAD(object):
 
     # BAN - commented out the block below because in rev mode it was creating
     # push/pop for the index variable that cause the original setting of the index
-    # var to be removed during reaching var analysis.
+    # var to be removed during reaching definition analysis.
     # # If the LHS is a subscript assignment with variable index, we need to
     # # store and restore that as well
     # if (isinstance(self.orig_target, gast.Subscript) and
@@ -586,6 +606,9 @@ class ReverseAD(object):
     # lines in the forward pass generated the adjoint
     for i, adj in enumerate(adjoint):
       adjoint[i] = comments.add_comment(adj, 'Grad of: %s' % orig_src)
+      break
+    if len(adjoint) > 1:
+      adjoint[-1] = comments.add_comment(adjoint[-1], 'END Grad of: %s' % orig_src)
 
     return primal, adjoint
 
@@ -618,9 +641,6 @@ class ReverseAD(object):
       adjoint.append(template.replace('d[x] = d[t[i]]', namer=self.namer,
                                       t=self.target, i=gast.Num(n=i), x=elt))
     return node, adjoint
-
-  def visit_Pass(self, node):
-    return node, []
 
   def visit_BinOp(self, node):
     op = type(node.op)
@@ -857,9 +877,16 @@ def reverse_ad(node, wrt, preserve_result, check_dims):
 
   ad = ReverseAD(wrt, preserve_result, check_dims)
   pri, adj = ad.visit(node)
+
+  # import astunparse
+  # print("PRIMAL:")
+  # print(astunparse.unparse(pri))
+  # print("\n\nADJOINT:")
+  # print(astunparse.unparse(adj))
+
   mod = gast.Module(body=[pri, adj])
   mod = annotate.find_stacks(mod)
-  return mod, ad.required, ad.stack
+  return mod, ad.required, ad.stack, ad.costmap
 
 
 def store_state(node, reaching, defined, stack):
@@ -932,7 +959,7 @@ def store_state(node, reaching, defined, stack):
   return node
 
 
-def split(node, stack):
+def split(node, stack, costmap):
   """Carry over the state from the primal to the adjoint.
 
   Args:
@@ -944,7 +971,7 @@ def split(node, stack):
     func: A `Module` node with two function definitions containing the primal
         and adjoint respectively.
   """
-  node, defined, reaching = _fix(node)
+  node, defined, reaching = _fix(node, costmap)
 
   # Store and restore the state
   node = store_state(node, reaching, defined, stack)
@@ -954,18 +981,19 @@ def split(node, stack):
   return node
 
 
-def joint(node):
+def joint(node, costmap):
   """Merge the bodies of primal and adjoint into a single function.
 
   Args:
     node: A module with the primal and adjoint function definitions as returned
         by `reverse_ad`.
+    costmap: A map of variables that are direct or indirect subscript entries of the cost.
 
   Returns:
     func: A `Module` node with a single function definition containing the
         combined primal and adjoint.
   """
-  node, _, _ = _fix(node)
+  node, _, _ = _fix(node, costmap)
   body = node.body[0].body[:-1] + node.body[1].body
   func = gast.Module(body=[gast.FunctionDef(
       name=node.body[0].name, args=node.body[1].args, body=body,
@@ -975,7 +1003,7 @@ def joint(node):
   return func
 
 
-def _fix(node):
+def _fix(node, costmap):
   """Fix the naive construction of the adjont.
 
   See `fixes.py` for details.
@@ -999,11 +1027,11 @@ def _fix(node):
   pri_cfg = cfg.CFG.build_cfg(node.body[0])
   defined = cfg.Defined()
   defined.visit(pri_cfg.entry)
-  reaching = cfg.ReachingDefinitions()
+  reaching = cfg.ReachingDefinitions(fix=False)
   reaching.visit(pri_cfg.entry)
 
   cfg.forward(node.body[1], cfg.Defined())
-  cfg.forward(node.body[1], cfg.ReachingDefinitions())
+  cfg.forward(node.body[1], cfg.ReachingDefinitions(fix=True))
 
   # Remove pushes of variables that were never defined
   fixes.CleanStack().visit(node)
@@ -1012,5 +1040,5 @@ def _fix(node):
   # Change accumulation into definition if possible
   fixes.CleanGrad().visit(node.body[1])
   # Define gradients that might or might not be defined
-  fixes.FixGrad().visit(node.body[1])
+  fixes.FixGrad(costmap).visit(node.body[1])
   return node, defined.exit, reaching.exit
