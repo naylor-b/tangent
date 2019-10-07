@@ -38,7 +38,7 @@ def primal_name(func, wrt):
 
 def _adjoint_name(func, wrt, template):
   if not isinstance(func, types.FunctionType):
-    raise TypeError
+    raise TypeError(func)
   varnames = six.get_function_code(func).co_varnames
   return template.format(func.__name__, ''.join(varnames[i] for i in wrt))
 

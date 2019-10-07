@@ -209,6 +209,16 @@ def tdot(z, x, y):
   d[z] = numpy.dot(d[x], y) + numpy.dot(x, d[y])
 
 
+@tangent_(numpy.outer)
+def touter(z, x, y):
+  d[z] = numpy.outer(d[x], y) + numpy.outer(x, d[y])
+
+
+@tangent_(numpy.add.outer)
+def taddouter(z, x, y):
+  d[z] = numpy.add.outer(d[x], y) + numpy.add.outer(x, d[y])
+
+
 @tangent_(numpy.atleast_1d)
 def tatleast_1d(z, x):
   d[z] = numpy.atleast_1d(d[x])
@@ -226,7 +236,12 @@ def tatleast_3d(z, x):
 
 @tangent_(numpy.zeros)
 def tzeros(z, x):
-  d[z] = numpy.zeros(d[x])
+  d[z] = numpy.zeros(x)
+
+
+@tangent_(numpy.ones)
+def tones(z, x):
+  d[z] = numpy.zeros(x)
 
 
 @tangent_(numpy.copy)

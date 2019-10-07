@@ -118,7 +118,7 @@ class FixGrad(transformers.TreeTransformer):
           import astunparse
           print("ADD INIT FOR:", astunparse.unparse(node).strip())
           self.added.add(use.id)
-          if use.id in self.costmap and anno.hasanno(use, 'adjoint_var'):
+          if use.id in self.costmap: # and anno.hasanno(use, 'adjoint_var'):
             self.insert_top(self._sub(use))
           else:
             self.insert_top(self._init(use))

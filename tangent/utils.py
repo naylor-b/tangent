@@ -28,6 +28,7 @@ import types
 import autograd
 import numpy
 import six
+import inspect
 from tangent import annotations as anno
 from tangent import non_differentiable
 from tangent import quoting
@@ -36,6 +37,15 @@ INIT_GRAD = quoting.quote('tangent.init_grad')
 ADD_GRAD = quoting.quote('tangent.add_grad')
 anno.setanno(INIT_GRAD, 'init_grad', True)
 anno.setanno(ADD_GRAD, 'add_grad', True)
+
+
+def node_error(exc_class, msg, node, func):
+  full = inspect.getsource(func).split('\n')
+  txt = full[node.lineno - 1]
+  if len(txt) > 100:
+    txt = txt[:100] + ' ...'
+
+  raise exc_class("{}: node='{}'\nline='{}'".format(msg, quoting.unquote(node), txt))
 
 
 def array_size(x, axis):
